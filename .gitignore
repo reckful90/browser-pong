@@ -1,0 +1,22 @@
+# Local hosting metadata
+.openai/
+
+# Dependencies and local caches
+node_modules/
+.cache/
+coverage/
+
+# Local environment settings and logs
+.env
+.env.*
+!.env.example
+*.log
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# dist/index.html is the playable game and is intentionally tracked.

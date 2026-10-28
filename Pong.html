@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pong</title><meta name="description" content="A simple, quiet game of Pong. Play against the computer or a friend.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='black' d='M0 0h32v32H0z'/%3E%3Cpath fill='white' d='M4 9h3v14H4zm21 0h3v14h-3zM14 14h4v4h-4z'/%3E%3C/svg%3E">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#000;color:#fff;font:16px/1.5 system-ui,sans-serif}main{max-width:1040px;margin:auto;padding:24px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}h1{font-size:1.25rem;font-weight:500;margin:0}#score{font-size:1.25rem;font-variant-numeric:tabular-nums}canvas{display:block;width:100%;aspect-ratio:16/10;background:#000;border:1px solid #555;touch-action:none;outline-offset:5px} .controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:20px}button{background:#000;color:#fff;border:1px solid #888;border-radius:4px;padding:10px 20px;font:inherit;min-width:96px;cursor:pointer}button:hover{background:#202020}button:focus-visible,input:focus-visible{outline:2px solid white;outline-offset:4px}#toggle{background:#fff;color:#000;border-color:#fff}label{display:flex;align-items:center;gap:12px;margin-left:auto}input{width:140px;accent-color:#fff}p{color:#aaa;margin:16px 0 0;font-size:.9375rem}#status{min-height:1.5em;color:#fff} @media(max-width:560px){main{padding:16px}label{margin-left:0;width:100%;flex-wrap:wrap}canvas{aspect-ratio:4/5}header{margin-bottom:12px}}
+[hidden]{display:none!important}.menu{border:1px solid #555;min-height:400px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:40px 20px;text-align:center}.menu h2{font-size:clamp(3rem,10vw,5rem);font-weight:500;letter-spacing:.12em;margin:0}.menu p{margin:8px 0 28px}.menu-options{display:flex;flex-direction:column;gap:14px;width:min(100%,300px)}#startGame{background:#fff;color:#000;border-color:#fff}.menu small{color:#aaa;display:block;font-size:.8rem}#startGame small{color:#444}#modeLabel{margin:0 0 16px} @media(max-width:560px){.menu{min-height:360px}}
+</style>
+</head>
+<body><main>
+<header><h1>Pong</h1><div hidden id="score" aria-label="You 0, computer 0">0 : 0</div></header>
+<section id="menu" class="menu" aria-labelledby="menuTitle">
+<h2 id="menuTitle">PONG</h2>
+<p>A quiet game. A little competition.</p>
+<div class="menu-options">
+<button id="startGame">Start Game<small>Single player · You vs computer</small></button>
+<button id="twoPlayerGame">2 Player Game<small>Local play · W / S vs ↑ / ↓</small></button>
+</div>
+</section>
+<section id="game" hidden aria-label="Pong game">
+<p id="modeLabel"></p>
+<canvas id="court" width="960" height="600" tabindex="0" aria-label="Pong court. You control the left paddle using up and down arrows, W and S, or moving your mouse or finger."></canvas>
+<div class="controls"><button id="toggle">Start</button><button id="reset">Reset</button><button id="mainMenu">Main Menu</button><label for="speed">Starting speed <input id="speed" type="range" min="1" max="5" step="1" value="2"><output id="speedLabel" for="speed">2 / 5</output></label></div>
+<p id="status" role="status">Ready when you are.</p>
+<p id="instructions"></p>
+<p>Catch a blue orb with your paddle for a second paddle lasting 10 seconds.</p>
+</section>
+</main>
+<script>
+(()=>{
+'use strict';
+const canvas=document.querySelector('#court'),ctx=canvas.getContext('2d'),toggle=document.querySelector('#toggle'),speedInput=document.querySelector('#speed'),status=document.querySelector('#status');
+const W=960,H=600,PW=14,PH=116,R=8,LX=30,RX=W-30-PW;
+const menu=document.querySelector('#menu'),game=document.querySelector('#game'),score=document.querySelector('#score');
+let mode='single',inMenu=true;
+const keys=new Set();let left=(H-PH)/2,right=left,ball,running=false,started=false,playerScore=0,computerScore=0,last=0,accumulator=0,serveWait=0,nextDirection=-1,pointerTarget=null;
+const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+const GAP=58,OFFSET=PH+GAP,ORB_R=12,POWER_SECONDS=10;
+const powers={left:{time:0,offset:0},right:{time:0,offset:0}};
+let orb=null,orbWait=6;
+function paddlePositions(side){const y=side==='left'?left:right,power=powers[side];return power.time>0?[y,y+power.offset]:[y];}
+function paddleBounds(side){const power=powers[side];return power.time>0?[Math.max(0,-power.offset),Math.min(H-PH,H-PH-power.offset)]:[0,H-PH];}
+function grantPower(side){const power=powers[side],y=side==='left'?left:right;if(power.time<=0)power.offset=y>=OFFSET?-OFFSET:OFFSET;power.time=POWER_SECONDS;}
+function spawnOrb(){const eligible=['left','right'].filter(side=>powers[side].time<=0);if(!eligible.length){orbWait=2;return;}const side=eligible[Math.floor(Math.random()*eligible.length)],y=side==='left'?left:right;const candidates=[];for(let pos=24;pos<=H-24;pos+=24)if(pos<y-ORB_R-24||pos>y+PH+ORB_R+24)candidates.push(pos);orb={side,x:(side==='left'?LX:RX)+PW/2,y:candidates[Math.floor(Math.random()*candidates.length)],time:5};}
+function tickPowers(dt){for(const power of Object.values(powers))power.time=Math.max(0,power.time-dt);if(orb){orb.time-=dt;if(orb.time<=0){orb=null;orbWait=8+Math.random()*4;}}else{orbWait-=dt;if(orbWait<=0)spawnOrb();}}
+function collectOrb(){if(orb&&paddlePositions(orb.side).some(y=>orb.y+ORB_R>=y&&orb.y-ORB_R<=y+PH)){grantPower(orb.side);orb=null;orbWait=8+Math.random()*4;}}
+function baseSpeed(){return 150+Number(speedInput.value)*55;}
+function serve(direction=-1){ball={x:W/2,y:H/2,vx:0,vy:0,speed:baseSpeed(),hits:0};const angle=(Math.random()-.5)*.65;ball.vx=direction*Math.cos(angle)*ball.speed;ball.vy=Math.sin(angle)*ball.speed;serveWait=.8;nextDirection=direction;}
+function refreshScore(){document.querySelector('#score').textContent=playerScore+' : '+computerScore;document.querySelector('#score').setAttribute('aria-label',mode==='two'?`Player 1 ${playerScore}, Player 2 ${computerScore}`:`You ${playerScore}, computer ${computerScore}`);}
+function setRunning(value){running=value&&!inMenu;value=running;if(value){started=true;status.textContent='';}else{keys.clear();pointerTarget=null;status.textContent=started?'Paused.':'Ready when you are.';}toggle.textContent=value?'Pause':started?'Resume':'Start';last=0;accumulator=0;}
+function reset(){playerScore=0;computerScore=0;left=right=(H-PH)/2;started=false;orb=null;orbWait=6;for(const power of Object.values(powers)){power.time=0;power.offset=0;}serve();refreshScore();setRunning(false);draw();}
+function startGame(selectedMode){
+ mode=selectedMode;inMenu=false;menu.hidden=true;game.hidden=false;score.hidden=false;
+ const instructions=mode==='two'?'Player 1 (left): W / S. Player 2 (right): ↑ / ↓. Space pauses.':'You’re on the left. Use ↑ ↓ or W / S, or move your mouse or finger on the court. Space pauses.';
+ document.querySelector('#instructions').textContent=instructions;
+ document.querySelector('#modeLabel').textContent=mode==='two'?'Player 1 vs Player 2':'You vs Computer';
+ canvas.setAttribute('aria-label','Pong court. '+instructions);
+ reset();setRunning(true);canvas.focus();
+}
+function showMenu(){setRunning(false);inMenu=true;reset();menu.hidden=false;game.hidden=true;score.hidden=true;document.querySelector('#startGame').focus();}
+function bounce(paddleY,direction){ball.hits++;ball.speed=Math.min(baseSpeed()*4,ball.speed*1.05);const relative=clamp((ball.y-(paddleY+PH/2))/(PH/2),-1,1);const angle=relative*Math.PI*.29;ball.vx=direction*Math.cos(angle)*ball.speed;ball.vy=Math.sin(angle)*ball.speed;ball.x=direction>0?LX+PW+R:RX-R;}
+function step(dt){
+ tickPowers(dt);
+ const up=keys.has('w')||(mode==='single'&&keys.has('arrowup')),down=keys.has('s')||(mode==='single'&&keys.has('arrowdown'));
+ if(up||down)left+=((down?1:0)-(up?1:0))*500*dt;
+ else if(mode==='single'&&pointerTarget!==null)left+=clamp(pointerTarget-PH/2-left,-600*dt,600*dt);
+ left=clamp(left,...paddleBounds('left'));
+ if(mode==='two'){
+  right+=((keys.has('arrowdown')?1:0)-(keys.has('arrowup')?1:0))*500*dt;
+  right=clamp(right,...paddleBounds('right'));
+ }else{
+ let target=ball.vx>0?ball.y+Math.sin(ball.x/130)*20:H/2;
+ if(orb?.side==='right'&&ball.vx<0)target=orb.y;
+ let desired=target-PH/2;
+ if(powers.right.time>0){const extraDesired=desired-powers.right.offset;if(Math.abs(extraDesired-right)<Math.abs(desired-right))desired=extraDesired;}
+ right=clamp(right+clamp(desired-right,-260*dt,260*dt),...paddleBounds('right'));
+ }
+ collectOrb();
+ if(serveWait>0){serveWait-=dt;return;}
+ const oldX=ball.x;ball.x+=ball.vx*dt;ball.y+=ball.vy*dt;
+ if(ball.y<R){ball.y=2*R-ball.y;ball.vy=Math.abs(ball.vy);}else if(ball.y>H-R){ball.y=2*(H-R)-ball.y;ball.vy=-Math.abs(ball.vy);}
+ const leftHit=paddlePositions('left').find(y=>ball.y+R>=y&&ball.y-R<=y+PH),rightHit=paddlePositions('right').find(y=>ball.y+R>=y&&ball.y-R<=y+PH);
+ if(ball.vx<0&&oldX-R>=LX+PW&&ball.x-R<=LX+PW&&leftHit!==undefined)bounce(leftHit,1);
+ else if(ball.vx>0&&oldX+R<=RX&&ball.x+R>=RX&&rightHit!==undefined)bounce(rightHit,-1);
+ if(ball.x<-R||ball.x>W+R){const playerWon=ball.x>W;playerWon?playerScore++:computerScore++;refreshScore();serve(playerWon?-1:1);}
+}
+function draw(){ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';for(const y of paddlePositions('left'))ctx.fillRect(LX,y,PW,PH);for(const y of paddlePositions('right'))ctx.fillRect(RX,y,PW,PH);ctx.beginPath();ctx.arc(ball.x,ball.y,R,0,Math.PI*2);ctx.fill();if(orb){ctx.fillStyle='#64cfff';ctx.beginPath();ctx.arc(orb.x,orb.y,ORB_R,0,Math.PI*2);ctx.fill();}}
+function frame(time){if(running){const delta=last?Math.min((time-last)/1000,.05):0;accumulator+=delta;while(accumulator>=1/240){step(1/240);accumulator-=1/240;}}last=time;draw();requestAnimationFrame(frame);}
+document.querySelector('#startGame').addEventListener('click',()=>startGame('single'));
+document.querySelector('#twoPlayerGame').addEventListener('click',()=>startGame('two'));
+document.querySelector('#mainMenu').addEventListener('click',showMenu);
+toggle.addEventListener('click',()=>{setRunning(!running);canvas.focus();});document.querySelector('#reset').addEventListener('click',()=>{reset();canvas.focus();});
+speedInput.addEventListener('input',()=>{document.querySelector('#speedLabel').textContent=speedInput.value+' / 5';if(!started){serve();draw();}else status.textContent='New speed applies to the next rally.';});
+window.addEventListener('keydown',e=>{if(inMenu)return;if(e.target instanceof HTMLInputElement||e.target instanceof HTMLButtonElement)return;const key=e.key.toLowerCase();if(['arrowup','arrowdown','w','s',' '].includes(key)){e.preventDefault();if(key===' '){if(!e.repeat)setRunning(!running);}else{keys.add(key);pointerTarget=null;}}});
+window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
+function point(e){if(inMenu||mode==='two')return;const bounds=canvas.getBoundingClientRect();pointerTarget=clamp((e.clientY-bounds.top)/bounds.height*H,0,H);}
+canvas.addEventListener('pointerdown',e=>{canvas.focus();canvas.setPointerCapture(e.pointerId);point(e);});canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.buttons)point(e);});canvas.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse')pointerTarget=null;});canvas.addEventListener('pointercancel',()=>pointerTarget=null);
+window.addEventListener('blur',()=>{if(running)setRunning(false);});document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)setRunning(false);});
+const context=document.modelContext;if(context?.registerTool){try{Promise.resolve(context.registerTool({name:'pause_pong',title:'Pause Pong',description:'Pause the current Pong game.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||typeof input!=='object'||Object.keys(input).length)throw new Error('Expected an empty object.');setRunning(false);draw();return {paused:!running,playerScore,computerScore};}})).catch(()=>{});}catch{}}
+showMenu();requestAnimationFrame(frame);
+})();
+</script></body></html>
